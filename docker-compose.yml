@@ -1,0 +1,55 @@
+# Local development stack: MongoDB + the three services.
+# In Azure, MongoDB is replaced by Cosmos DB (Mongo API) and secrets come from Key Vault.
+services:
+  mongo:
+    image: mongo:7
+    ports: ["27017:27017"]
+    volumes: [mongo-data:/data/db]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  user-service:
+    build: ./services/user-service
+    ports: ["3001:3001"]
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/shopfast_users
+      JWT_SECRET: local-dev-secret-local-dev-secret-1234
+      ADMIN_EMAIL: admin@shopfast.local
+      ADMIN_PASSWORD: ChangeMe123!
+    depends_on: { mongo: { condition: service_healthy } }
+
+  product-service:
+    build: ./services/product-service
+    ports: ["3002:3002"]
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/shopfast_products
+      JWT_SECRET: local-dev-secret-local-dev-secret-1234
+      INTERNAL_API_KEY: local-internal-key-1234
+    depends_on: { mongo: { condition: service_healthy } }
+
+  order-service:
+    build: ./services/order-service
+    ports: ["3003:3003"]
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/shopfast_orders
+      JWT_SECRET: local-dev-secret-local-dev-secret-1234
+      INTERNAL_API_KEY: local-internal-key-1234
+      PRODUCT_SERVICE_URL: http://product-service:3002
+    depends_on:
+      mongo: { condition: service_healthy }
+      product-service: { condition: service_started }
+
+  # Web UI + gateway: serves the SPA on :8080 and proxies /api/* to the services above.
+  frontend:
+    build: ./frontend
+    ports: ["8080:8080"]
+    depends_on:
+      - user-service
+      - product-service
+      - order-service
+
+volumes:
+  mongo-data:
